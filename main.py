@@ -1,72 +1,118 @@
-import requests
+from flask import Flask, request, jsonify, send_from_directory
+import os
+import threading
 import time
-import random
-import string
-import re
+from Acc_Gen import InstagramAccountCreator
+from mail_tm import MailTm
 
-class MailTm:
-    BASE_URL = "https://api.mail.tm"
+app = Flask(__name__, static_folder='static')
 
-    def __init__(self):
-        self.session = requests.Session()
-        self.domain = self._get_domain()
-        self.address = None
-        self.password = None
-        self.token = None
-        self.account_id = None
+# In-memory storage for active sessions
+sessions = {}
 
-    def _get_domain(self):
-        res = self.session.get(f"{self.BASE_URL}/domains")
-        return res.json()["hydra:member"][0]["domain"]
+@app.route('/')
+def index():
+    return send_from_directory('static', 'index.html')
 
-    def create_account(self):
-        username = "".join(random.choices(string.ascii_lowercase + string.digits, k=10))
-        self.address = f"{username}@{self.domain}"
-        self.password = "pass12345"
+def auto_create_worker(count, results_list):
+    for i in range(count):
+        try:
+            mail = MailTm()
+            email = mail.create_account()
+            if not email: continue
+            if not mail.login(): continue
+            
+            creator = InstagramAccountCreator(country='US', language='en')
+            creator.generate_headers()
+            
+            if creator.send_verification_email(email):
+                print(f"Email sent to {email}, waiting for OTP...")
+                otp = mail.get_otp()
+                if otp:
+                    print(f"OTP received: {otp}")
+                    signup_code = creator.validate_verification_code(email, otp)
+                    if signup_code:
+                        print("Signup code validated, creating account...")
+                        credentials = creator.create_account(email, signup_code)
+                        if credentials:
+                            results_list.append({
+                                'username': credentials.username,
+                                'password': credentials.password,
+                                'email': credentials.email
+                            })
+                    else:
+                        print("Failed to validate signup code")
+                else:
+                    print("No OTP found in time")
+        except Exception as e:
+            print(f"Error creating account {i+1}: {e}")
+
+@app.route('/api/auto-generate', methods=['POST'])
+def auto_generate():
+    data = request.json
+    count = int(data.get('count', 1))
+    if count > 10: count = 10 # Safety limit
+    
+    results = []
+    # Using a thread to avoid blocking if it's just a few, 
+    # but for simplicity in this fast edit we'll do it synchronously or in a short thread
+    # and return the results. Real bulk should be async but this fits the "ask count" flow.
+    auto_create_worker(count, results)
+    
+    return jsonify({'success': True, 'accounts': results})
+
+@app.route('/api/request-otp', methods=['POST'])
+def request_otp():
+    data = request.json
+    email = data.get('email')
+    if not email:
+        return jsonify({'error': 'Email is required'}), 400
+    
+    creator = InstagramAccountCreator(country='US', language='en')
+    try:
+        creator.generate_headers()
+        if creator.send_verification_email(email):
+            sessions[email] = creator
+            return jsonify({'success': True, 'message': 'OTP sent to email'})
+        else:
+            return jsonify({'error': 'Failed to send OTP'}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/verify-otp', methods=['POST'])
+def verify_otp():
+    data = request.json
+    email = data.get('email')
+    otp = data.get('otp')
+    
+    if not email or not otp:
+        return jsonify({'error': 'Email and OTP are required'}), 400
         
-        res = self.session.post(f"{self.BASE_URL}/accounts", json={
-            "address": self.address,
-            "password": self.password
-        })
-        if res.status_code == 201:
-            self.account_id = res.json()["id"]
-            return self.address
-        return None
+    creator = sessions.get(email)
+    if not creator:
+        return jsonify({'error': 'Session expired or not found'}), 404
+        
+    try:
+        signup_code = creator.validate_verification_code(email, otp)
+        if signup_code:
+            credentials = creator.create_account(email, signup_code)
+            if credentials:
+                # Remove from sessions after successful creation
+                del sessions[email]
+                return jsonify({
+                    'success': True, 
+                    'credentials': {
+                        'username': credentials.username,
+                        'password': credentials.password,
+                        'email': credentials.email
+                    }
+                })
+            else:
+                return jsonify({'error': 'Account creation failed'}), 500
+        else:
+            return jsonify({'error': 'Invalid OTP'}), 400
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
-    def login(self):
-        res = self.session.post(f"{self.BASE_URL}/token", json={
-            "address": self.address,
-            "password": self.password
-        })
-        if res.status_code == 200:
-            self.token = res.json()["token"]
-            self.session.headers.update({"Authorization": f"Bearer {self.token}"})
-            return True
-        return False
-
-    def get_otp(self, timeout=120):
-        print(f"Waiting for OTP for {self.address}...")
-        start = time.time()
-        while time.time() - start < timeout:
-            try:
-                res = self.session.get(f"{self.BASE_URL}/messages")
-                if res.status_code == 200:
-                    messages = res.json()["hydra:member"]
-                    if messages:
-                        for msg in messages:
-                            msg_id = msg["id"]
-                            msg_res = self.session.get(f"{self.BASE_URL}/messages/{msg_id}")
-                            if msg_res.status_code == 200:
-                                data = msg_res.json()
-                                # Check intro, text, and html
-                                content = (data.get("intro") or "") + (data.get("text") or "") + (data.get("html") or [""])[0]
-                                print(f"Checking message: {data.get('subject')}")
-                                otp = re.search(r"\b(\d{6})\b", content)
-                                if otp:
-                                    print(f"Found OTP: {otp.group(1)}")
-                                    return otp.group(1)
-            except Exception as e:
-                print(f"Error checking messages: {e}")
-            time.sleep(5)
-        print("OTP timeout reached")
-        return None
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
