@@ -73,11 +73,19 @@
                     let html = '';
                     data.accounts.forEach(acc => {
                         html += `
-                            <div style="margin-bottom:10px; padding-bottom:10px; border-bottom:1px solid #ddd">
-                                <strong>Username:</strong> ${acc.username}<br>
-                                <strong>Password:</strong> ${acc.password}<br>
-                                <strong>Email:</strong> ${acc.email}
-                                ${acc.followed ? `<br><span style="color: green; font-size: 12px;">✓ Followed ${acc.followed}</span>` : ''}
+                            <div style="margin-bottom:15px; padding-bottom:10px; border-bottom:1px solid #ddd">
+                                <p style="margin: 5px 0;"><strong>Instagram Account:</strong></p>
+                                <div style="font-family: monospace; font-size: 13px; background: #eee; padding: 5px; border-radius: 4px;">
+                                    User: ${acc.username}<br>
+                                    Pass: ${acc.password}<br>
+                                    Email: ${acc.email}
+                                </div>
+                                <p style="margin: 10px 0 5px 0;"><strong>Mail.tm Credentials:</strong></p>
+                                <div style="font-family: monospace; font-size: 12px; background: #f9f9f9; padding: 5px; border-radius: 4px; border: 1px dashed #ccc;">
+                                    Email: ${acc.mail_tm_email || acc.email}<br>
+                                    Pass: ${acc.mail_tm_password || 'pass12345'}
+                                </div>
+                                ${acc.followed ? `<p style="color: green; font-size: 12px; margin-top: 5px;">✓ Followed ${acc.followed}</p>` : ''}
                             </div>
                         `;
                     });
