@@ -502,7 +502,7 @@ class InstagramAccountCreator:
 
         return None
 
-    def follow_user(self, target_username: str) -> bool:
+    def follow_user(self, target_username_or_url: str) -> bool:
         """
         Follow a target user.
         """
@@ -510,6 +510,9 @@ class InstagramAccountCreator:
             raise ValueError("Headers not generated. Call generate_headers() first.")
 
         try:
+            # Extract username if a URL is provided
+            target_username = target_username_or_url.strip().strip('/').split('/')[-1].split('?')[0]
+            
             # Step 1: Get user ID from username
             headers = self.headers.copy()
             headers['referer'] = f'{self.BASE_URL}/{target_username}/'
@@ -524,6 +527,15 @@ class InstagramAccountCreator:
             user_id = None
             if '"id":"' in response.text:
                 user_id = response.text.split('"id":"')[1].split('"')[0]
+            elif '"pk":"' in response.text: # Alternative ID marker
+                user_id = response.text.split('"pk":"')[1].split('"')[0]
+            
+            if not user_id:
+                # Try another way to extract from the page source if JSON-like parsing fails
+                import re
+                match = re.search(r'"user_id":"(\d+)"', response.text)
+                if match:
+                    user_id = match.group(1)
             
             if not user_id:
                 logger.error(f"Failed to find user ID for {target_username}")
