@@ -48,6 +48,8 @@ def auto_create_worker(count, results_list, target_follow=None):
                                 'username': credentials.username,
                                 'password': credentials.password,
                                 'email': credentials.email,
+                                'mail_tm_email': mail.address,
+                                'mail_tm_password': mail.password,
                                 'followed': target_follow if target_follow else None
                             })
                     else:
@@ -56,6 +58,23 @@ def auto_create_worker(count, results_list, target_follow=None):
                     print("No OTP found in time")
         except Exception as e:
             print(f"Error creating account {i+1}: {e}")
+
+@app.route('/gen', methods=['GET'])
+def gen_api():
+    count = request.args.get('count', default=1, type=int)
+    target_follow = request.args.get('follow')
+    
+    if count > 10: count = 10 # Safety limit
+    
+    results = []
+    # Using the same worker logic
+    auto_create_worker(count, results, target_follow)
+    
+    return jsonify({
+        'success': True,
+        'count': len(results),
+        'accounts': results
+    })
 
 @app.route('/api/auto-generate', methods=['POST'])
 def auto_generate():
