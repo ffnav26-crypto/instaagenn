@@ -542,21 +542,81 @@ class InstagramAccountCreator:
                 return False
 
             # Step 2: Send follow request
-            headers['x-csrftoken'] = self.session.cookies.get('csrftoken', headers.get('x-csrftoken'))
+            csrftoken = self.session.cookies.get('csrftoken')
+            if csrftoken:
+                headers['x-csrftoken'] = csrftoken
+            
+            # Add security headers often checked during actions
+            headers['x-instagram-ajax'] = headers.get('x-instagram-ajax', '1')
+            headers['x-ig-www-claim'] = '0'
+            headers['referer'] = f'{self.BASE_URL}/{target_username}/'
+            
+            # Instagram often requires these parameters in the POST data
+            data = {
+                'container_module': 'profile',
+                'nav_chain': 'UserProfilePage:profile:1',
+                'user_id': user_id
+            }
+            
+            # Simulation of human behavior
+            logger.info(f"Simulating human interaction before following {target_username}...")
+            time.sleep(random.uniform(30, 45))
+            
+            # Visit the profile page multiple times to establish history
+            for _ in range(3):
+                self.session.get(f'{self.BASE_URL}/{target_username}/', headers=headers, proxies=self.proxies, timeout=30)
+                time.sleep(random.uniform(5, 10))
+            
+            # Use the mobile API endpoint which is often more reliable
+            follow_url = f'https://www.instagram.com/api/v1/friendships/create/{user_id}/'
+            headers['x-ig-app-id'] = '1217981644879628'
+            
+            # Final pre-follow delay
+            time.sleep(random.uniform(10, 15))
             
             response = self.session.post(
-                f'{self.API_BASE_URL}/friendships/create/{user_id}/',
+                follow_url,
                 headers=headers,
+                data=data,
                 proxies=self.proxies,
                 timeout=30
             )
             
-            if response.json().get('status') == ResponseStatus.SUCCESS.value:
-                logger.info(f"Successfully followed {target_username}")
+            # Wait after follow attempt
+            logger.info("Waiting for follow action to register...")
+            time.sleep(random.uniform(20, 30))
+            
+            # Check for success
+            if response.status_code == 200:
+                res_json = response.json()
+                if res_json.get('status') == ResponseStatus.SUCCESS.value:
+                    logger.info(f"Successfully followed {target_username}")
+                    return True
+            
+            # Additional check to see if follow was actually applied even if response was weird
+            verify_res = self.session.get(f'{self.BASE_URL}/{target_username}/?__a=1&__d=dis', headers=headers, proxies=self.proxies, timeout=30)
+            if '"following":true' in verify_res.text:
+                logger.info(f"Verified: Successfully following {target_username}")
                 return True
-            else:
-                logger.error(f"Failed to follow {target_username}: {response.text}")
-                return False
+            
+            # Try one more time with the web endpoint if mobile failed
+            logger.info("Retrying with web endpoint...")
+            web_follow_url = f'{self.API_BASE_URL}/friendships/create/{user_id}/'
+            response = self.session.post(
+                web_follow_url,
+                headers=headers,
+                data=data,
+                proxies=self.proxies,
+                timeout=30
+            )
+            
+            time.sleep(random.uniform(5, 10))
+            verify_res = self.session.get(f'{self.BASE_URL}/{target_username}/?__a=1&__d=dis', headers=headers, proxies=self.proxies, timeout=30)
+            if '"following":true' in verify_res.text:
+                logger.info(f"Verified: Successfully following {target_username}")
+                return True
+                
+            return False
                 
         except Exception as e:
             logger.error(f"Error following user: {e}")
