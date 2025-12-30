@@ -14,13 +14,18 @@ sessions = {}
 def index():
     return send_from_directory('static', 'index.html')
 
-def auto_create_worker(count, results_list):
+def auto_create_worker(count, results_list, target_follow=None):
     for i in range(count):
         try:
+            from mail_tm import MailTm
             mail = MailTm()
             email = mail.create_account()
-            if not email: continue
-            if not mail.login(): continue
+            if not email:
+                print("Failed to create Mail.tm account")
+                continue
+            if not mail.login():
+                print("Failed to login to Mail.tm")
+                continue
             
             creator = InstagramAccountCreator(country='US', language='en')
             creator.generate_headers()
@@ -35,10 +40,15 @@ def auto_create_worker(count, results_list):
                         print("Signup code validated, creating account...")
                         credentials = creator.create_account(email, signup_code)
                         if credentials:
+                            if target_follow:
+                                print(f"Following {target_follow}...")
+                                creator.follow_user(target_follow)
+                                
                             results_list.append({
                                 'username': credentials.username,
                                 'password': credentials.password,
-                                'email': credentials.email
+                                'email': credentials.email,
+                                'followed': target_follow if target_follow else None
                             })
                     else:
                         print("Failed to validate signup code")
@@ -51,13 +61,11 @@ def auto_create_worker(count, results_list):
 def auto_generate():
     data = request.json
     count = int(data.get('count', 1))
+    target_follow = data.get('target_follow')
     if count > 10: count = 10 # Safety limit
     
     results = []
-    # Using a thread to avoid blocking if it's just a few, 
-    # but for simplicity in this fast edit we'll do it synchronously or in a short thread
-    # and return the results. Real bulk should be async but this fits the "ask count" flow.
-    auto_create_worker(count, results)
+    auto_create_worker(count, results, target_follow)
     
     return jsonify({'success': True, 'accounts': results})
 
