@@ -22,6 +22,12 @@
         <div id="error"></div>
         
         <div id="step-email">
+            <div style="margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 15px;">
+                <p style="font-size: 14px; color: #666;">Bulk Auto-Generate</p>
+                <input type="number" id="bulk-count" placeholder="How many accounts? (max 10)" min="1" max="10">
+                <button onclick="autoGenerate()" id="btn-auto" style="background-color: #28a745;">Auto Generate</button>
+            </div>
+            <p style="font-size: 14px; color: #666;">Or Manual Create</p>
             <input type="email" id="email" placeholder="Enter Email" required>
             <button onclick="requestOtp()" id="btn-email">Send OTP</button>
         </div>
@@ -42,6 +48,47 @@
     <script>
         const showError = (msg) => { document.getElementById('error').innerText = msg; };
         const hideError = () => { document.getElementById('error').innerText = ''; };
+
+        async function autoGenerate() {
+            const count = document.getElementById('bulk-count').value;
+            const btn = document.getElementById('btn-auto');
+            if(!count || count < 1) return showError('Please enter count');
+            
+            btn.disabled = true;
+            btn.innerText = 'Creating...';
+            hideError();
+            
+            try {
+                const res = await fetch('/api/auto-generate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ count })
+                });
+                const data = await res.json();
+                if(data.success && data.accounts.length > 0) {
+                    document.getElementById('step-email').classList.add('hidden');
+                    document.getElementById('step-result').classList.remove('hidden');
+                    let html = '';
+                    data.accounts.forEach(acc => {
+                        html += `
+                            <div style="margin-bottom:10px; padding-bottom:10px; border-bottom:1px solid #ddd">
+                                <strong>Username:</strong> ${acc.username}<br>
+                                <strong>Password:</strong> ${acc.password}<br>
+                                <strong>Email:</strong> ${acc.email}
+                            </div>
+                        `;
+                    });
+                    document.getElementById('credentials').innerHTML = html;
+                } else {
+                    showError('Failed to create accounts or none created');
+                }
+            } catch(e) {
+                showError('Server error');
+            } finally {
+                btn.disabled = false;
+                btn.innerText = 'Auto Generate';
+            }
+        }
 
         async function requestOtp() {
             const email = document.getElementById('email').value;
