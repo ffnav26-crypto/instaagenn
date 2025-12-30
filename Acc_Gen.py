@@ -502,6 +502,54 @@ class InstagramAccountCreator:
 
         return None
 
+    def follow_user(self, target_username: str) -> bool:
+        """
+        Follow a target user.
+        """
+        if not self.headers:
+            raise ValueError("Headers not generated. Call generate_headers() first.")
+
+        try:
+            # Step 1: Get user ID from username
+            headers = self.headers.copy()
+            headers['referer'] = f'{self.BASE_URL}/{target_username}/'
+            
+            response = self.session.get(
+                f'{self.BASE_URL}/{target_username}/?__a=1&__d=dis',
+                headers=headers,
+                proxies=self.proxies,
+                timeout=30
+            )
+            
+            user_id = None
+            if '"id":"' in response.text:
+                user_id = response.text.split('"id":"')[1].split('"')[0]
+            
+            if not user_id:
+                logger.error(f"Failed to find user ID for {target_username}")
+                return False
+
+            # Step 2: Send follow request
+            headers['x-csrftoken'] = self.session.cookies.get('csrftoken', headers.get('x-csrftoken'))
+            
+            response = self.session.post(
+                f'{self.API_BASE_URL}/friendships/create/{user_id}/',
+                headers=headers,
+                proxies=self.proxies,
+                timeout=30
+            )
+            
+            if response.json().get('status') == ResponseStatus.SUCCESS.value:
+                logger.info(f"Successfully followed {target_username}")
+                return True
+            else:
+                logger.error(f"Failed to follow {target_username}: {response.text}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error following user: {e}")
+            return False
+
     def run_account_creation_flow(self, email: str) -> Optional[AccountCredentials]:
         """
         Run the complete account creation flow.
