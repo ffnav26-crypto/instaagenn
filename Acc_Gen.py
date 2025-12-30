@@ -145,10 +145,17 @@ class InstagramAccountCreator:
 
         for attempt in range(max_attempts):
             try:
+                # Randomized sleep between attempts to avoid detection
+                if attempt > 0:
+                    time.sleep(random.uniform(10, 20))
+                
                 logger.info(f"Generating headers (Attempt {attempt + 1}/{max_attempts})")
 
                 # Generate user agent
                 self.user_agent = self._generate_user_agent()
+                
+                # Randomized wait before first request
+                time.sleep(random.uniform(2, 5))
 
                 # Initial request to get cookies
                 initial_response = self.session.get(
@@ -545,6 +552,11 @@ class InstagramAccountCreator:
             csrftoken = self.session.cookies.get('csrftoken')
             if csrftoken:
                 headers['x-csrftoken'] = csrftoken
+            
+            # Additional logic to handle IP block or proxy detection
+            if response.status_code == 400 and "open proxy" in response.text.lower():
+                logger.warning("IP flagged as proxy. Applying additional jitter...")
+                time.sleep(60) # Longer cooldown
             
             # Add security headers often checked during actions
             headers['x-instagram-ajax'] = headers.get('x-instagram-ajax', '1')
